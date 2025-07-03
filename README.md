@@ -1,0 +1,6 @@
+- **highlight_googlekeyword.js**: Highlights specific keywords on Google pages for better visibility during research.
+- **linkedin_search_scrape.js**: Scrapes LinkedIn search results for data collection, useful for networking or recruitment.
+- **twitter_replies.js**: Collects Twitter replies as you scroll and downloads them as a CSV file for analysis or archiving.
+- **twitter_search_scrape.js**: Scrapes Twitter search results for data collection, aiding in social media research.
+- **twitter_user_scrape.js**: Scrapes user profiles on Twitter for detailed information, useful for influencer analysis or outreach.
+- **twitter_username_scrape.js**: Extracts usernames from Twitter pages to build lists for engagement or tracking.
