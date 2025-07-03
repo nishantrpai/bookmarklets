@@ -1,13 +1,27 @@
 /**
  * This script finds cells containing "search_query" in Sheet 1 and adds those values to Sheet 2
  */
+
+/**
+ * Creates a custom menu in Google Sheets when the spreadsheet opens
+ */
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('Custom Tools')
+      .addItem('Transfer Search Queries', 'transferSearchQueries')
+      .addToUi();
+}
+
+/**
+ * Main function that transfers rows containing "search_query" from Sheet1 to Sheet2
+ */
 function transferSearchQueries() {
   // Access the active spreadsheet
   var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   
   // Access Sheet 1 and Sheet 2
-  var sourceSheet = spreadsheet.getSheetByName("Sheet 1");
-  var targetSheet = spreadsheet.getSheetByName("Sheet 2");
+  var sourceSheet = spreadsheet.getSheetByName("Sheet1");
+  var targetSheet = spreadsheet.getSheetByName("Sheet2");
   
   if (!sourceSheet || !targetSheet) {
     Logger.log("Error: Couldn't find one or both sheets");
@@ -45,16 +59,23 @@ function transferSearchQueries() {
   // Add the matching rows to Sheet 2 if we found any
   if (matchingRows.length > 0) {
     // Get the next empty row in Sheet 2
-    var nextRow = targetSheet.getLastRow() + 1;
+    var nextRow = 2;
     
-    // Get the number of columns in the matching rows
-    var numColumns = matchingRows[0].length;
+    // We only want to update columns A and B (first 2 columns)
+    var numColumnsToUpdate = Math.min(2, matchingRows[0].length);
     
-    // Write all matching rows to Sheet 2
-    targetSheet.getRange(nextRow, 1, matchingRows.length, numColumns).setValues(matchingRows);
+    // For each matching row, update only columns A and B
+    for (var i = 0; i < matchingRows.length; i++) {
+      var rowData = matchingRows[i].slice(0, numColumnsToUpdate);
+      targetSheet.getRange(nextRow + i, 1, 1, numColumnsToUpdate).setValues([rowData]);
+    }
     
+    // Log success and show a notification to the user
     Logger.log("Successfully transferred " + matchingRows.length + " rows to Sheet 2");
+    SpreadsheetApp.getUi().alert("Success! Transferred " + matchingRows.length + " rows containing 'search_query' to Sheet2.");
   } else {
+    // Log and show message when no matching rows found
     Logger.log("No rows containing 'search_query' were found");
+    SpreadsheetApp.getUi().alert("No cells containing 'search_query' were found in Sheet1.");
   }
 }
