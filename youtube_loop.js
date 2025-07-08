@@ -1,0 +1,183 @@
+javascript:(function(){
+  // YouTube Custom Loop Bookmarklet
+  
+  function createLoopControls() {
+    // Check if we're on YouTube
+    if (!window.location.hostname.includes('youtube.com')) {
+      alert('This bookmarklet only works on YouTube!');
+      return;
+    }
+    
+    // Get the video element
+    const video = document.querySelector('video');
+    if (!video) {
+      alert('No video found on this page!');
+      return;
+    }
+    
+    // Remove existing controls if they exist
+    const existingControls = document.getElementById('custom-loop-controls');
+    if (existingControls) {
+      existingControls.remove();
+    }
+    
+    // Find video container to insert below
+    const videoContainer = document.querySelector('#player') || document.querySelector('.html5-video-player') || document.querySelector('video').parentElement;
+    
+    // Create minimal control panel
+    const controlPanel = document.createElement('div');
+    controlPanel.id = 'custom-loop-controls';
+    controlPanel.style.cssText = `
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-size: 13px;
+      color: #333;
+    `;
+    
+    // Get current video time for defaults
+    const currentTime = Math.floor(video.currentTime);
+    const duration = Math.floor(video.duration) || 60;
+    
+    // Helper function to format time (defined early)
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    // Create minimal controls with inline layout
+    const title = document.createElement('span');
+    title.style.cssText = 'font-weight: bold; margin-right: 15px; color: #065fd4;';
+    title.textContent = '🔄 Loop:';
+    
+    const startInput = document.createElement('input');
+    startInput.type = 'number';
+    startInput.value = currentTime.toString();
+    startInput.min = '0';
+    startInput.max = duration.toString();
+    startInput.style.cssText = 'width: 60px; padding: 2px 4px; margin: 0 5px; border: 1px solid #ccc; border-radius: 2px;';
+    startInput.placeholder = 'Start';
+    
+    const toText = document.createElement('span');
+    toText.textContent = ' to ';
+    toText.style.margin = '0 2px';
+    
+    const endInput = document.createElement('input');
+    endInput.type = 'number';
+    endInput.value = Math.min(currentTime + 30, duration).toString();
+    endInput.min = '0';
+    endInput.max = duration.toString();
+    endInput.style.cssText = 'width: 60px; padding: 2px 4px; margin: 0 5px; border: 1px solid #ccc; border-radius: 2px;';
+    endInput.placeholder = 'End';
+    
+    const startLoopBtn = document.createElement('button');
+    startLoopBtn.textContent = '▶️ Start';
+    startLoopBtn.style.cssText = 'padding: 4px 8px; margin: 0 5px; background: #065fd4; color: white; border: none; border-radius: 2px; cursor: pointer; font-size: 12px;';
+    
+    const stopLoopBtn = document.createElement('button');
+    stopLoopBtn.textContent = '⏹️ Stop';
+    stopLoopBtn.style.cssText = 'padding: 4px 8px; margin: 0 5px; background: #666; color: white; border: none; border-radius: 2px; cursor: pointer; font-size: 12px;';
+    
+    const setCurrentBtn = document.createElement('button');
+    setCurrentBtn.textContent = 'Use Current Time';
+    setCurrentBtn.style.cssText = 'padding: 4px 8px; margin: 0 5px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 2px; cursor: pointer; font-size: 11px;';
+    
+    const statusSpan = document.createElement('span');
+    statusSpan.id = 'loop-status';
+    statusSpan.style.cssText = 'margin-left: 10px; font-size: 11px; color: #666;';
+    statusSpan.textContent = 'Inactive';
+    
+    // Append all elements in one line
+    controlPanel.appendChild(title);
+    controlPanel.appendChild(startInput);
+    controlPanel.appendChild(toText);
+    controlPanel.appendChild(endInput);
+    controlPanel.appendChild(startLoopBtn);
+    controlPanel.appendChild(stopLoopBtn);
+    controlPanel.appendChild(setCurrentBtn);
+    controlPanel.appendChild(statusSpan);
+    
+    // Insert below video
+    if (videoContainer && videoContainer.parentNode) {
+      videoContainer.parentNode.insertBefore(controlPanel, videoContainer.nextSibling);
+    } else {
+      document.body.appendChild(controlPanel);
+    }
+    
+    // Variables for loop control
+    let loopInterval = null;
+    let isLooping = false;
+    
+    // Helper function to format time
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+    
+    // Update status display
+    function updateStatus(status, color = '#666') {
+      if (statusSpan) {
+        statusSpan.textContent = status;
+        statusSpan.style.color = color;
+      }
+    }
+    
+    // Event listeners using direct element references
+    setCurrentBtn.onclick = function() {
+      const current = Math.floor(video.currentTime);
+      startInput.value = current.toString();
+      endInput.value = Math.min(current + 30, duration).toString();
+    };
+    
+    startLoopBtn.onclick = function() {
+      const startTime = parseFloat(startInput.value);
+      const endTime = parseFloat(endInput.value);
+      
+      if (startTime >= endTime) {
+        alert('Start time must be less than end time!');
+        return;
+      }
+      
+      if (startTime < 0 || endTime > video.duration) {
+        alert('Times must be within video duration!');
+        return;
+      }
+      
+      // Stop any existing loop
+      if (loopInterval) {
+        clearInterval(loopInterval);
+      }
+      
+      isLooping = true;
+      video.currentTime = startTime;
+      
+      // Check every 100ms if we've reached the end time
+      loopInterval = setInterval(function() {
+        if (video.currentTime >= endTime) {
+          video.currentTime = startTime;
+        }
+      }, 100);
+      
+      updateStatus(`${formatTime(startTime)} → ${formatTime(endTime)}`, '#065fd4');
+    };
+    
+    stopLoopBtn.onclick = function() {
+      if (loopInterval) {
+        clearInterval(loopInterval);
+        loopInterval = null;
+      }
+      isLooping = false;
+      updateStatus('Stopped', '#666');
+    };
+    
+    // No need for time display updates in minimal version
+  }
+  
+  // Initialize
+  createLoopControls();
+})();
