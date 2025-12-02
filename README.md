@@ -1,3 +1,4 @@
+- **copy_linkedin_profile.js**: Copies LinkedIn profile data (name, headline, about, experience, education) to clipboard as JSON.
 - **highlight_googlekeyword.js**: Highlights specific keywords on Google pages for better visibility during research. highlights green keywords in Google search results.
 - **linkedin_search_scrape.js**: Scrapes LinkedIn search results for data collection, useful for networking or recruitment.
 - **twitter_replies.js**: Collects Twitter replies as you scroll and downloads them as a CSV file for analysis or archiving.
