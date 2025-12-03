@@ -62,11 +62,6 @@ let text = sections.join('\n\n');
 
 text = text.trim();
 
-if (!text || text.trim().length === 0) {
-  showToast('No reviews found on this page');
-  return;
-}
-
 if (storagereview) {
   text = storagereview + '\n\n' + text;
   text = text.trim();
