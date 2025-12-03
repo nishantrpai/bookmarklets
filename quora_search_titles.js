@@ -1,0 +1,1 @@
+javascript:(function(){let questions=Array.from(document.querySelectorAll('.puppeteer_test_question_title')).map(node => node.innerText);navigator.clipboard.writeText(questions.join('\n'));})();

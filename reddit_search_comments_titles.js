@@ -1,0 +1,1 @@
+javascript:(function(){let questions=Array.from(document.querySelectorAll('.i18n-search-comment-post-title-a11y')).map(node=>node.innerText);navigator.clipboard.writeText(questions.join('\n'));})();
