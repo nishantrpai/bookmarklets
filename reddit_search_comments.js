@@ -20,9 +20,9 @@ function showToast(message) {
   }, 3000);
 }
 
-let questions=Array.from(document.querySelectorAll('.i18n-search-comment-post-title-a11y')).map(node=>node.innerText);
+let questions=Array.from(document.querySelectorAll('.i18n-search-comment-content')).map(node=>node.innerText);
 navigator.clipboard.writeText(questions.join('\n---\n')).then(() => {
-  showToast(`Copied ${questions.length} titles to clipboard`);
+  showToast(`Copied ${questions.length} comments to clipboard`);
 }).catch(() => {
   showToast('Failed to copy to clipboard');
 });

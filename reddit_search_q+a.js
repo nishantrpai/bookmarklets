@@ -20,9 +20,17 @@ function showToast(message) {
   }, 3000);
 }
 
-let questions=Array.from(document.querySelectorAll('.i18n-search-comment-post-title-a11y')).map(node=>node.innerText);
-navigator.clipboard.writeText(questions.join('\n---\n')).then(() => {
-  showToast(`Copied ${questions.length} titles to clipboard`);
+let titles = Array.from(document.querySelectorAll('.i18n-search-comment-post-title-a11y')).map(node => node.innerText);
+let comments = Array.from(document.querySelectorAll('[data-testid="search-comment-content"] search-telemetry-tracker')).map(node => node.innerText);
+
+let formatted = ``;
+comments.forEach((comment, index) => {
+  formatted += `Q. ${titles[index]}\n\n`;
+  formatted += `A. ${comment}\n\n---\n\n`;
+});
+
+navigator.clipboard.writeText(formatted).then(() => {
+  showToast(`Copied Q&A format with ${comments.length} answers to clipboard`);
 }).catch(() => {
   showToast('Failed to copy to clipboard');
 });
