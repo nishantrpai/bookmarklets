@@ -2,8 +2,8 @@
 
 /*
 Usage:
-  node stackscan.js https://example.com
-  node stackscan.js urls.txt
+  node scan_stack.js https://example.com
+  node scan_stack.js urls.txt
 */
 
 const fs = require('fs');
@@ -238,8 +238,8 @@ async function main() {
   if (!input) {
 
     console.log('Usage:');
-    console.log('node stackscan.js https://example.com');
-    console.log('node stackscan.js urls.txt');
+    console.log('node scan_stack.js https://example.com');
+    console.log('node scan_stack.js urls.txt');
 
     process.exit(1);
   }
