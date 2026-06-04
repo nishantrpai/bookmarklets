@@ -16,6 +16,16 @@ node extract.js data.txt \
   --after "we are" \
   --words 3
 
+# words around a pattern (default 2 words before/after)
+node extract.js data.txt \
+  --around "workaround" \
+  --words 5
+
+# around with multiple patterns
+node extract.js data.txt \
+  --around "app for|plugin for|better way" \
+  --words 3
+
 # regex extraction
 node extract.js data.txt \
   --regex "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
@@ -83,6 +93,12 @@ const beforePhrases = beforeRaw
 const regexInput = getArg('--regex');
 const words = parseInt(getArg('--words') || '1', 10);
 const top = parseInt(getArg('--top') || '0', 10);
+
+const around = getArg('--around');
+const wordsAround = parseInt(
+  getArg('--words') || '2',
+  10
+);
 
 const countMode = hasFlag('--count');
 const uniqueMode = hasFlag('--unique');
@@ -174,6 +190,37 @@ if (beforePhrases.length > 0) {
         }
       }
     }
+  }
+}
+
+if (around) {
+
+  const aroundRegex = new RegExp(around, 'gi');
+  
+  let match;
+  while ((match = aroundRegex.exec(text)) !== null) {
+    const matchStart = match.index;
+    const matchEnd = match.index + match[0].length;
+    
+    // Extract text before and after the match
+    const beforeText = text.substring(0, matchStart);
+    const afterText = text.substring(matchEnd);
+    
+    // Get N words before
+    const beforeTokens = tokenize(beforeText);
+    const wordsBefore = beforeTokens.slice(-wordsAround).join(' ');
+    
+    // Get N words after
+    const afterTokens = tokenize(afterText);
+    const wordsAfter = afterTokens.slice(0, wordsAround).join(' ');
+    
+    // Combine: before + match + after
+    const matchText = match[0];
+    const extracted = [wordsBefore, matchText, wordsAfter]
+      .filter(Boolean)
+      .join(' ');
+    
+    results.push(extracted);
   }
 }
 
