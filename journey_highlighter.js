@@ -22,8 +22,8 @@
         { id: 'why',       label: 'Why',       color: '#fb8c00', q: 'Why it matters' },
         { id: 'tried',     label: 'Tried',     color: '#e53935', q: 'What has not worked' },
         { id: 'stakes',    label: 'Stakes',    color: '#8e24aa', q: 'If they do / do not' },
-        { id: 'objection', label: 'Objection', color: '#fdd835', q: 'What could stop them' },
-        { id: 'constraint', label: 'Constraint', color: '#00897b', q: 'Limits or conditions they must work within' }
+        { id: 'constraint', label: 'Constraint', color: '#ec407a', q: 'Limits, deadlines, budgets, conditions' },
+        { id: 'objection', label: 'Objection', color: '#fdd835', q: 'What could stop them' }
     ];
     const SLOT_MAP = Object.fromEntries(SLOTS.map(s => [s.id, s]));
 
@@ -163,6 +163,54 @@
         return out;
     }
 
+
+    // "my + noun" = something in the person's life ("my saas", "my parents", "my small business").
+    // Open-class nouns qualify by default; the CLOSED class of discourse/incidental nouns is excluded instead.
+    const MY_MOD = new Set((
+        'own new old small little young younger older elderly aging first second third family big main other best ex ' +
+        'late former future whole entire tiny large local full-time part-time side solo'
+    ).split(' '));
+    const MY_SKIP_FIRST = new Set('current daily weekly usual typical normal existing present morning evening'.split(' '));
+    const MY_DISCOURSE = new Set((
+        // talking about the conversation itself
+        'question questions post posts point points opinion opinions understanding thoughts thought guess bad god gosh advice ' +
+        'comment comments reply response answer take view views perspective pov experience knowledge belief impression idea ' +
+        'ideas suggestion suggestions recommendation thread title edit update mistake apologies fault turn way side case mind ' +
+        'head name pleasure honest sake word words example question\'s goal goals plan plans dream dreams problem problems ' +
+        // incidental objects / vocatives (not situation)
+        'favorite favourite worst biggest phone laptop computer keyboard mouse screen browser tab account password email username friend friends man dude'
+    ).split(' '));
+
+    // Speech-act / deixis lead-ins: "here's my…", "let me share my…", "sorry for my…" = talking ABOUT the conversation
+    const MY_SPEECH_ACT = /(?:here'?s|here\s+is|that'?s|this\s+is|let\s+me|check(?:\s+out)?|see|read|share|sorry\s+for|thanks?\s+for|thank\s+you\s+for|attached|linked|including|answer|explain|describe|clarify|mention|introduce|take|per)\s+$/i;
+
+    function findMyNoun(w) {
+        const out = [];
+        const re = /\bmy\s+/gi;
+        let m;
+        while ((m = re.exec(w))) {
+            if (MY_SPEECH_ACT.test(w.slice(Math.max(0, m.index - 22), m.index))) continue;
+            let pos = m.index + m[0].length;
+            let head = null;
+            for (let k = 0; k < 3; k++) {
+                const rt = /([A-Za-z][A-Za-z'-]*)/g;
+                rt.lastIndex = pos;
+                const tm = rt.exec(w);
+                if (!tm || tm.index - pos > 1) break;
+                const low = tm[1].toLowerCase();
+                if (k === 0 && MY_SKIP_FIRST.has(low)) break;      // handled by doing.my_current
+                const end = tm.index + tm[1].length;
+                if (MY_MOD.has(low)) { pos = end; continue; }
+                head = { low, end };
+                break;
+            }
+            if (!head) continue;
+            if (NP_STOP.has(head.low) || MY_DISCOURSE.has(head.low) || /ly$/.test(head.low) || head.low.length < 3) continue;
+            out.push({ start: m.index, end: head.end });
+        }
+        return out;
+    }
+
     // ── Rule construction ──
     function R(slot, id, src, o = {}) {
         return {
@@ -179,135 +227,147 @@
     function F(slot, id, find, gate) { return { slot, id, find, gate: gate || 'fp' }; }
 
     const WANT_DESIRE =
-          `${S}${ADV}(?:want|wanna|wish|hope|need|crave|desire|dream\\s+of|dream\\s+about|long\\s+to|long\\s+for|aspire\\s+to|` +
-          `would\\s+(?:really\\s+)?(?:like|love)|hoping(?:\\s+to|\\s+for|\\s+that)?|looking\\s+to|wishing(?:\\s+to|\\s+for)?|dreaming\\s+of)\\b` +
-          `|\\b(?:i|we)'d\\s+(?:really\\s+|just\\s+)?(?:like|love)\\b`;
+        `${S}${ADV}(?:want|wanna|wish|hope|need|crave|desire|dream\\s+of|dream\\s+about|long\\s+to|long\\s+for|aspire\\s+to|` +
+        `would\\s+(?:really\\s+)?(?:like|love)|hoping(?:\\s+to|\\s+for|\\s+that)?|looking\\s+to|wishing(?:\\s+to|\\s+for)?|dreaming\\s+of)\\b` +
+        `|\\b(?:i|we)'d\\s+(?:really\\s+|just\\s+)?(?:like|love)\\b`;
 
     const WANT_GOAL =
-          String.raw`\b(?:my|our)\s+(?:(?:main|ultimate|current|new|big|only|biggest|first|real)\s+)?(?:goal|aim|target|dream|objective|mission|resolution|plan)\s+(?:is|was|for|this)\b` +
-          `|${S}${ADV}(?:going\\s+to|gonna|planning\\s+to|plan\\s+to|aiming\\s+to|aim\\s+to|intend\\s+to|intending\\s+to|working\\s+towards?|` +
-          `determined\\s+to|committed\\s+to|set\\s+on|setting\\s+out\\s+to|trying\\s+to(?!\\s+(?:figure|decide|understand|find\\s+out))|attempting\\s+to|ready\\s+to|about\\s+to)`;
+        String.raw`\b(?:my|our)\s+(?:(?:main|ultimate|current|new|big|only|biggest|first|real)\s+)?(?:goal|aim|target|dream|objective|mission|resolution|plan)\s+(?:is|was|for|this)\b` +
+        `|${S}${ADV}(?:going\\s+to|gonna|planning\\s+to|plan\\s+to|aiming\\s+to|aim\\s+to|intend\\s+to|intending\\s+to|working\\s+towards?|` +
+        `determined\\s+to|committed\\s+to|set\\s+on|setting\\s+out\\s+to|trying\\s+to(?!\\s+(?:figure|decide|understand|find\\s+out))|attempting\\s+to|ready\\s+to|about\\s+to)`;
 
     const WANT_EXPLORE =
-          `${S}${ADV}(?:thinking\\s+(?:about|of|if)|considering|wondering(?:\\s+(?:if|whether|how|what|about|why))?|` +
-          `curious(?:\\s+(?:about|if|whether|how|what))?|exploring|open\\s+to|interested\\s+in|looking\\s+(?:for|into|at)|researching|` +
-          `not\\s+sure(?:\\s+(?:if|whether|how|what|where|which|about))?|unsure|figuring\\s+out|` +
-          `trying\\s+to\\s+(?:figure|decide|understand|find\\s+out)|debating|torn|deciding|can't\\s+decide|cannot\\s+decide|confused\\s+(?:about|by|on))`;
+        `${S}${ADV}(?:thinking\\s+(?:about|of|if)|considering|wondering(?:\\s+(?:if|whether|how|what|about|why))?|` +
+        `curious(?:\\s+(?:about|if|whether|how|what))?|exploring|open\\s+to|interested\\s+in|looking\\s+(?:for|into|at)|researching|` +
+        `not\\s+sure(?:\\s+(?:if|whether|how|what|where|which|about))?|unsure|figuring\\s+out|` +
+        `trying\\s+to\\s+(?:figure|decide|understand|find\\s+out)|debating|torn|deciding|can't\\s+decide|cannot\\s+decide|confused\\s+(?:about|by|on))`;
+
+    // Present perfect ("I've written a book") = done-so-far. English irregular participles are a closed set.
+    const PP_IRREG = 'written|built|made|done|begun|run|sold|won|found|taken|given|become|grown|kept|left|paid|put|set|spent|' +
+        'brought|bought|taught|chosen|drawn|driven|eaten|fallen|flown|forgotten|gone|hidden|held|led|met|quit|ridden|risen|' +
+        'sent|shown|sung|slept|spoken|stood|stolen|swum|thrown|worn|told|lost|saved|cut|read|hit|beaten|broken|caught|fought';
+    // -ed words that are states/feelings/other slots, not accomplishments
+    const PP_ED_EXCL = 'tried|attempted|failed|wanted|needed|wished|hoped|liked|loved|hated|used|worried|noticed|realized|realised|' +
+        'seemed|looked|appeared|supposed|started|joined|enrolled|picked|signed';
+    const PERFECT =
+        String.raw`\b(?:i|we)(?:'ve|\s+have)\s+(?:(?:just|recently|finally|already|actually|also|successfully|slowly|barely|almost|only)\s+)*` +
+        `(?:(?!(?:${PP_ED_EXCL})\\b)[a-z]{2,}ed|${PP_IRREG})\\b`;
 
     const RULES = [
         // ── WHERE: identity & situation (tight frames, never whole sentences) ──
         F('where', 'where.i_am_a', findAmA),
         F('where', 'where.as_a', findAsA),
         F('where', 'where.have_N', findPossess),
+        F('where', 'where.my_noun', findMyNoun),
         R('where', 'where.age_im',
-          String.raw`\b(?:i(?:'m|\s+am)|im)\s+\d{2}(?:\s*(?:years?\s+old|yo|y\/o|yrs?\s+old))?\b(?!\s*(?:%|\$|k\b|lbs?|kg|minutes?|mins?|hours?|hrs?|miles?|days?|weeks?|months?|pounds|times))`,
-          { span: 'tight' }),
+            String.raw`\b(?:i(?:'m|\s+am)|im)\s+\d{2}(?:\s*(?:years?\s+old|yo|y\/o|yrs?\s+old))?\b(?!\s*(?:%|\$|k\b|lbs?|kg|minutes?|mins?|hours?|hrs?|miles?|days?|weeks?|months?|pounds|times))`,
+            { span: 'tight' }),
         R('where', 'where.age_yo', String.raw`\b\d{2}[\s-]?(?:years?[\s-]?old|yo|y\/o)\b`, { span: 'tight' }),
         R('where', 'where.28M', String.raw`(^|[\s(\[])(\d{2}\s?[MF])(?=$|[\s)\].,!?:\/])`,
-          { flags: 'g', span: 'tight', gate: 'none', trimLead: true }),
+            { flags: 'g', span: 'tight', gate: 'none', trimLead: true }),
         R('where', 'where.decade',
-          String.raw`\bin\s+my\s+(?:(?:early|mid|late)[\s-])?(?:\d0s|twenties|thirties|forties|fifties|sixties)\b`,
-          { span: 'tight', gate: 'none' }),
+            String.raw`\bin\s+my\s+(?:(?:early|mid|late)[\s-])?(?:\d0s|twenties|thirties|forties|fifties|sixties)\b`,
+            { span: 'tight', gate: 'none' }),
         R('where', 'where.family_of_N',
-          String.raw`\b(?:dad|father|mom|mum|mama|mother|parent|papa|grandma|grandpa|stepdad|stepmom)\s+of\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b(?:\s+(?:kids|children|boys|girls|cats|dogs))?`,
-          { span: 'tight', gate: 'none' }),
+            String.raw`\b(?:dad|father|mom|mum|mama|mother|parent|papa|grandma|grandpa|stepdad|stepmom)\s+of\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b(?:\s+(?:kids|children|boys|girls|cats|dogs))?`,
+            { span: 'tight', gate: 'none' }),
         R('where', 'where.situation_verb',
-          String.raw`\b(?:i|we)\s+(?:(?:currently|also|still|now|only|just|both|full[- ]time)\s+)*(?:work(?!\s+(?:out|on)\b)|live|study|teach|own|manage|commute|run(?=\s+(?:an?|my|the|our)\b))\b`,
-          { cap: 7 }),
+            String.raw`\b(?:i|we)\s+(?:(?:currently|also|still|now|only|just|both|full[- ]time)\s+)*(?:work(?!\s+(?:out|on)\b)|live|study|teach|own|manage|commute|run(?=\s+(?:an?|my|the|our)\b))\b`,
+            { cap: 7 }),
 
         // ── DOING: ongoing / habitual present ──
         R('doing', 'doing.progressive',
-          String.raw`\b(?:i(?:'m|\s+am)?|we(?:'re|\s+are)?|i(?:'ve|\s+have)\s+been|we(?:'ve|\s+have)\s+been|i\s+been|we\s+been)\s+(?:(?:currently|now|still|also|just|already|actually|slowly|mostly|always|even|really|only|recently|finally)\s+)*([a-z][a-z-]*ing)\b`,
-          { veto: m => PROG_EXCL.has(m[1].toLowerCase()) }),
+            String.raw`\b(?:i(?:'m|\s+am)?|we(?:'re|\s+are)?|i(?:'ve|\s+have)\s+been|we(?:'ve|\s+have)\s+been|i\s+been|we\s+been)\s+(?:(?:currently|now|still|also|just|already|actually|slowly|mostly|always|even|really|only|recently|finally)\s+)*([a-z][a-z-]*ing)\b`,
+            { veto: m => PROG_EXCL.has(m[1].toLowerCase()) }),
         R('doing', 'doing.habitual',
-          String.raw`\b(?:i|we)\s+(?:usually|normally|typically|mostly|generally|daily|weekly|often|regularly|sometimes|currently)\s+(?!want\b|need\b|wish\b|hope\b|feel\b|think\b|know\b|wonder\b)\w+`,
-          { cap: 10 }),
+            String.raw`\b(?:i|we)\s+(?:usually|normally|typically|mostly|generally|daily|weekly|often|regularly|sometimes|currently)\s+(?!want\b|need\b|wish\b|hope\b|feel\b|think\b|know\b|wonder\b)\w+`,
+            { cap: 10 }),
         R('doing', 'doing.currently',
-          String.raw`\b(?:currently|right\s+now|at\s+the\s+moment|these\s+days|lately)\b(?!\s*,?\s*(?:i|we)\s+(?:really\s+|just\s+)?(?:want|need|wish|hope|would))`,
-          { cap: 10 }),
+            String.raw`\b(?:currently|right\s+now|at\s+the\s+moment|these\s+days|lately)\b(?!\s*,?\s*(?:i|we)\s+(?:really\s+|just\s+)?(?:want|need|wish|hope|would))`,
+            { cap: 10 }),
         R('doing', 'doing.every', String.raw`\b(?:every|each)\s+(?:day|morning|evening|night|week|weekend|month)\b`, { cap: 10 }),
         R('doing', 'doing.my_current',
-          String.raw`\bmy\s+(?:current|daily|weekly|usual|typical|normal|existing|present|morning|evening)\s+[\w-]+`,
-          { cap: 10 }),
+            String.raw`\bmy\s+(?:current|daily|weekly|usual|typical|normal|existing|present|morning|evening)\s+[\w-]+`,
+            { cap: 10 }),
         R('doing', 'doing.started',
-          String.raw`\b(?:i|we)(?:'ve|\s+have)?\s+(?:(?:just|recently|finally|only|also|actually)\s+)*(?:started|begun|began|picked\s+up|got\s+into|got\s+started|joined|signed\s+up(?:\s+for)?|enrolled)\b`,
-          { cap: 10 }),
+            String.raw`\b(?:i|we)(?:'ve|\s+have)?\s+(?:(?:just|recently|finally|only|also|actually)\s+)*(?:started|begun|began|picked\s+up|got\s+into|got\s+started|joined|signed\s+up(?:\s+for)?|enrolled)\b`,
+            { cap: 10 }),
+        R('doing', 'doing.perfect', PERFECT, { cap: 14 }),
 
         // ── WANT: one slot, graded by specificity (explore < desire < goal < specific) ──
         R('want', 'want.desire', WANT_DESIRE, {
             level: 'desire', cap: 14,
             veto: m => /(?:don't|do\s+not|not|no\s+longer)\s+(?:\w+\s+)*(?:need|hope|wish|crave|desire)\b/i.test(m[0]) ||
-            /^\s*(?:to\s+)?(?:say|mention|add|note|admit|clarify|ask|point\s+out|apologi[sz]e|thank|stress|emphasi[sz]e|confess|be\s+honest)\b/i.test(m.input.slice(m.index + m[0].length))
+                /^\s*(?:to\s+)?(?:say|mention|add|note|admit|clarify|ask|point\s+out|apologi[sz]e|thank|stress|emphasi[sz]e|confess|be\s+honest)\b/i.test(m.input.slice(m.index + m[0].length))
         }),
         R('want', 'want.goal', WANT_GOAL, { level: 'goal', cap: 14 }),
         R('want', 'want.explore', WANT_EXPLORE, { level: 'explore', cap: 14 }),
         R('want', 'want.q_how_do_i', String.raw`\b(?:how|what|where|which|when)\s+(?:do|can|should|would|could|did|does|am)\s+(?:i|we)\b`,
-          { level: 'explore', span: 'tail', cap: 14 }),
+            { level: 'explore', span: 'tail', cap: 14 }),
         R('want', 'want.should_i', String.raw`\bshould\s+(?:i|we)\b`, { level: 'explore', span: 'tail', cap: 12 }),
         R('want', 'want.ask_help',
-          String.raw`\b(?:(?:any|some)\s+(?:advice|tips|ideas|suggestions|recommendations|thoughts|insights?|guidance|pointers)|(?:anyone|anybody|someone)\s+(?:have|has|got|know|else|tried|with|here|out\s+there|who)\b[^.!?]{0,40})`,
-          { level: 'explore', gate: 'none', cap: 10 }),
+            String.raw`\b(?:(?:any|some)\s+(?:advice|tips|ideas|suggestions|recommendations|thoughts|insights?|guidance|pointers)|(?:anyone|anybody|someone)\s+(?:have|has|got|know|else|tried|with|here|out\s+there|who)\b[^.!?]{0,40})`,
+            { level: 'explore', gate: 'none', cap: 10 }),
         R('want', 'want.help_me', String.raw`\bhelp\s+me\b`, { level: 'explore', cap: 10 }),
 
         // ── WHY: causal connectives, affect/pain, patterns, trigger events ──
         R('why', 'why.connective',
-          String.raw`\b(?:because(?:\s+of)?|since|so\s+that|so\s+(?:i|we)\s+(?:can|could|won't|don't|will|would)|in\s+order\s+to|which\s+is\s+why|that(?:'s|\s+is)\s+why|the\s+reason\s+(?:is|i|why)|due\s+to|ever\s+since|after\s+(?:i|we|my|our|a|an|the|having|being)|my\s+(?:doctor|dr|wife|husband|boss|partner|therapist|trainer|coach|mom|dad|mother|father|kid|kids|son|daughter|girlfriend|boyfriend|friend|manager)\s+(?:said|told|says|asked|thinks|suggested|recommended))\b`,
-          { span: 'tail', cap: 18 , gate: 'none'}),
+            String.raw`\b(?:because(?:\s+of)?|since|so\s+that|so\s+(?:i|we)\s+(?:can|could|won't|don't|will|would)|in\s+order\s+to|which\s+is\s+why|that(?:'s|\s+is)\s+why|the\s+reason\s+(?:is|i|why)|due\s+to|ever\s+since|after\s+(?:i|we|my|our|a|an|the|having|being)|my\s+(?:doctor|dr|wife|husband|boss|partner|therapist|trainer|coach|mom|dad|mother|father|kid|kids|son|daughter|girlfriend|boyfriend|friend|manager)\s+(?:said|told|says|asked|thinks|suggested|recommended))\b`,
+            { span: 'tail', cap: 18 }),
         R('why', 'why.affect',
-          String.raw`\b(?:tired|sick|fed\s+up|bored|scared|afraid|worried|embarrassed|ashamed|frustrated|stuck|overwhelmed|burn(?:ed|t)\s+out|exhausted|stressed|anxious|miserable|desperate|terrified|dreading|dread|hate|hating|can't\s+stand|cannot\s+stand)\b(?:\s+(?:of|with|about|by|in|that|to))?`,
-          { cap: 10 }),
+            String.raw`\b(?:tired|sick|fed\s+up|bored|scared|afraid|worried|embarrassed|ashamed|frustrated|stuck|overwhelmed|burn(?:ed|t)\s+out|exhausted|stressed|anxious|miserable|desperate|terrified|dreading|dread|hate|hating|can't\s+stand|cannot\s+stand)\b(?:\s+(?:of|with|about|by|in|that|to))?`,
+            { cap: 10 }),
         R('why', 'why.pattern',
-          String.raw`\b(?:i|we)\s+(?:just\s+|still\s+|really\s+|literally\s+)*(?:can(?:'t|not)\s+(?:stop|quit|help)|can't\s+seem\s+to|cannot\s+seem\s+to|never\s+seem\s+to|always\s+end\s+up|always\s+seem\s+to|struggle\s+(?:to|with)|have\s+trouble|have\s+a\s+hard\s+time|find\s+it\s+(?:hard|difficult|impossible)|don't\s+know\s+how\s+to|have\s+no\s+idea\s+(?:how|what|where)|have\s+no\s+(?:energy|motivation)|feel\s+(?:so|stuck|lost|trapped|helpless|hopeless|behind|like\s+(?:i|a\s+failure|giving|nothing)))`,
-          { cap: 10 }),
+            String.raw`\b(?:i|we)\s+(?:just\s+|still\s+|really\s+|literally\s+)*(?:can(?:'t|not)\s+(?:stop|quit|help)|can't\s+seem\s+to|cannot\s+seem\s+to|never\s+seem\s+to|always\s+end\s+up|always\s+seem\s+to|struggle\s+(?:to|with)|have\s+trouble|have\s+a\s+hard\s+time|find\s+it\s+(?:hard|difficult|impossible)|don't\s+know\s+how\s+to|have\s+no\s+idea\s+(?:how|what|where)|have\s+no\s+(?:energy|motivation)|feel\s+(?:so|stuck|lost|trapped|helpless|hopeless|behind|like\s+(?:i|a\s+failure|giving|nothing)))`,
+            { cap: 10 }),
         R('why', 'why.trigger',
-          String.raw`\b(?:i|we)\s+(?:just\s+|recently\s+|finally\s+|suddenly\s+)?(?:found\s+out|realized|realised|noticed|discovered|woke\s+up\s+to|was\s+told|got\s+told|was\s+diagnosed|got\s+diagnosed|got\s+laid\s+off|was\s+laid\s+off|got\s+fired|lost\s+my|had\s+a\s+(?:scare|wake-up\s+call))\b`,
-          { cap: 14 }),
+            String.raw`\b(?:i|we)\s+(?:just\s+|recently\s+|finally\s+|suddenly\s+)?(?:found\s+out|realized|realised|noticed|discovered|woke\s+up\s+to|was\s+told|got\s+told|was\s+diagnosed|got\s+diagnosed|got\s+laid\s+off|was\s+laid\s+off|got\s+fired|lost\s+my|had\s+a\s+(?:scare|wake-up\s+call))\b`,
+            { cap: 14 }),
 
         // ── TRIED: past attempts and failure markers ──
         R('tried', 'tried.tried',
-          String.raw`\b(?:i|we)(?:'ve|\s+have)?\s+(?:(?:already|also|even|literally|actually|previously|honestly|once|twice|just|really|personally|all)\s+)*(?:tried|attempted)\b`,
-          { cap: 14 }),
+            String.raw`\b(?:i|we)(?:'ve|\s+have)?\s+(?:(?:already|also|even|literally|actually|previously|honestly|once|twice|just|really|personally|all)\s+)*(?:tried|attempted)\b`,
+            { cap: 14 }),
         R('tried', 'tried.failure',
-          String.raw`\b(?:(?:didn't|did\s+not|never|hasn't|has\s+not|haven't|wasn't|couldn't)\s+(?:(?:really|ever|actually|seem\s+to|even|quite|long\s+term|long-term)\s+)*(?:work|worked|help|helped|stick|last|click|fix|change|hold|translate|get\s+results|see\s+results)|(?:doesn't|does\s+not|don't|do\s+not|isn't|won't)\s+(?:(?:really|ever|actually|seem\s+to|even|quite)\s+)*(?:work|help|stick|last)|no\s+(?:luck|results?|progress|change|improvement|difference)|(?:nothing|none\s+of\s+(?:it|them|that|these|those))\s+(?:has\s+|have\s+|ever\s+|really\s+)*(?:work(?:s|ed)?|help(?:s|ed)?|stick(?:s)?|stuck)|gave\s+up|give\s+up\s+on|fell\s+off(?:\s+the\s+wagon)?|fell\s+back|relapsed|wasted|failed(?:\s+to|\s+at|\s+every)?|back\s+to\s+square\s+one|can(?:'t|not)\s+(?:seem\s+to\s+)?stick|couldn't\s+stick|keep(?:s)?\s+(?:failing|quitting|falling|relapsing|giving|forgetting|starting|restarting))`,
-          { cap: 10, veto: m => /\bif\s+(?:i|we)\s+(?:\w+\s+){0,2}$/i.test(m.input.slice(0, m.index)) }),
+            String.raw`\b(?:(?:didn't|did\s+not|never|hasn't|has\s+not|haven't|wasn't|couldn't)\s+(?:(?:really|ever|actually|seem\s+to|even|quite|long\s+term|long-term)\s+)*(?:work|worked|help|helped|stick|last|click|fix|change|hold|translate|get\s+results|see\s+results)|(?:doesn't|does\s+not|don't|do\s+not|isn't|won't)\s+(?:(?:really|ever|actually|seem\s+to|even|quite)\s+)*(?:work|help|stick|last)|no\s+(?:luck|results?|progress|change|improvement|difference)|(?:nothing|none\s+of\s+(?:it|them|that|these|those))\s+(?:has\s+|have\s+|ever\s+|really\s+)*(?:work(?:s|ed)?|help(?:s|ed)?|stick(?:s)?|stuck)|gave\s+up|give\s+up\s+on|fell\s+off(?:\s+the\s+wagon)?|fell\s+back|relapsed|wasted|failed(?:\s+to|\s+at|\s+every)?|back\s+to\s+square\s+one|can(?:'t|not)\s+(?:seem\s+to\s+)?stick|couldn't\s+stick|keep(?:s)?\s+(?:failing|quitting|falling|relapsing|giving|forgetting|starting|restarting))`,
+            { cap: 10, veto: m => /\bif\s+(?:i|we)\s+(?:\w+\s+){0,2}$/i.test(m.input.slice(0, m.index)) }),
 
         // ── STAKES: conditionals, fears, future-self ──
         R('stakes', 'stakes.conditional',
-          String.raw`\bif\s+(?:i|we)\s+(?:(?:really|just|still|ever|actually)\s+)*(?:don't|do\s+not|can't|cannot|never|keep|continue|stay|fail|miss|lose)\b` +
-          String.raw`|\bif\s+nothing\s+changes\b|\b(?:otherwise|or\s+else|before\s+it's\s+too\s+late|before\s+it\s+gets\s+worse)\b` +
-          String.raw`|\b(?:i'm|i\s+am|we're|we\s+are)\s+(?:so\s+|really\s+|just\s+)?(?:afraid|scared|worried|terrified)\s+(?:that\s+)?(?:i|we|it|this|my|she|he|they|people|everyone)\b` +
-          String.raw`|\b(?:i|we)'ll\s+(?:never|end\s+up|be\s+stuck|lose|regret|miss|die|be\s+alone|be\s+broke|be\s+unable)\b` +
-          String.raw`|\b(?:i|we)\s+(?:won't|will\s+not|wouldn't|would\s+never)\s+be\s+able\b` +
-          String.raw`|\b(?:i|we)'d\s+(?:finally|actually|be\s+able|get\s+to|never\s+have\s+to|be\s+so|be\s+free|feel|have\s+more)\b` +
-          String.raw`|\b(?:i|we)\s+(?:could|would)\s+finally\b|\bimagine\s+(?:being|if|having|not|waking)\b` +
-          String.raw`|\bwhat\s+if\s+(?:i|we)\b|\bwhen\s+(?:i|we)\s+finally\b|\bone\s+day\s+(?:i|we)\b`,
-          { span: 'tail', cap: 16 }),
+            String.raw`\bif\s+(?:i|we)\s+(?:(?:really|just|still|ever|actually)\s+)*(?:don't|do\s+not|can't|cannot|never|keep|continue|stay|fail|miss|lose)\b` +
+            String.raw`|\bif\s+nothing\s+changes\b|\b(?:otherwise|or\s+else|before\s+it's\s+too\s+late|before\s+it\s+gets\s+worse)\b` +
+            String.raw`|\b(?:i'm|i\s+am|we're|we\s+are)\s+(?:so\s+|really\s+|just\s+)?(?:afraid|scared|worried|terrified)\s+(?:that\s+)?(?:i|we|it|this|my|she|he|they|people|everyone)\b` +
+            String.raw`|\b(?:i|we)'ll\s+(?:never|end\s+up|be\s+stuck|lose|regret|miss|die|be\s+alone|be\s+broke|be\s+unable)\b` +
+            String.raw`|\b(?:i|we)\s+(?:won't|will\s+not|wouldn't|would\s+never)\s+be\s+able\b` +
+            String.raw`|\b(?:i|we)'d\s+(?:finally|actually|be\s+able|get\s+to|never\s+have\s+to|be\s+so|be\s+free|feel|have\s+more)\b` +
+            String.raw`|\b(?:i|we)\s+(?:could|would)\s+finally\b|\bimagine\s+(?:being|if|having|not|waking)\b` +
+            String.raw`|\bwhat\s+if\s+(?:i|we)\b|\bwhen\s+(?:i|we)\s+finally\b|\bone\s+day\s+(?:i|we)\b`,
+            { span: 'tail', cap: 16 }),
 
-        // ── OBJECTION: barriers (time / money / trust / effort / fit) ──
         // ── CONSTRAINT: limits, deadlines, budgets and conditions ──
         R('constraint', 'constraint.time_limit',
-          String.raw`\b(?:within|by|before|no later than|in the next|over the next|for the next)\s+(?:(?:next|coming)\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an|few|couple of)\s+(?:days?|weeks?|months?|years?|hours?|minutes?)\b`,
-          { cap: 12 }),
+            String.raw`\b(?:within|by|before|no later than|in the next|over the next|for the next)\s+(?:(?:next|coming)\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an|few|couple of)\s+(?:days?|weeks?|months?|years?|hours?|minutes?)\b`,
+            { cap: 12 }),
         R('constraint', 'constraint.budget_limit',
-          String.raw`\b(?:under|below|within|less than|no more than|at most|up to|maximum of|a maximum of)\s+(?:[$£€₹]\s*)?\d[\d,.]*(?:\s*(?:dollars?|bucks|rupees?|inr|usd|k|grand))?\b`,
-          { cap: 10 }),
+            String.raw`\b(?:under|below|within|less than|no more than|at most|up to|maximum of|a maximum of)\s+(?:[$£€₹]\s*\d[\d,.]*\s*k?|\d[\d,.]*\s*(?:dollars?|bucks|rupees?|inr|usd|k|grand|(?:a|per)\s+(?:month|week|year)|\/(?:mo|month|week|yr)))\b`,
+            { cap: 10 }),
         R('constraint', 'constraint.quantity_limit',
-          String.raw`\b(?:only|just|at most|no more than|up to|maximum of|limited to)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+(?:hours?|hrs?|minutes?|mins?|days?|weeks?|months?|sessions?|times?|people|items?|steps?)\b`,
-          { cap: 10 }),
+            String.raw`\b(?:only|just|at most|no more than|up to|maximum of|limited to)\s+(?:(?:have|get|got|spend|spare|do|work|manage|afford|use)\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an)\s+(?:hours?|hrs?|minutes?|mins?|days?|weeks?|months?|sessions?|times?|people|items?|steps?)\b`,
+            { cap: 10 }),
         R('constraint', 'constraint.availability',
-          String.raw`\b(?:only|just)\s+(?:on|during|after|before|between|at)\s+(?:weekdays?|weekends?|mornings?|afternoons?|evenings?|nights?|(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?)\b`,
-          { cap: 10 }),
+            String.raw`\b(?:only|just)\s+(?:on|during|after|before|between|at)\s+(?:weekdays?|weekends?|mornings?|afternoons?|evenings?|nights?|(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?)\b`,
+            { cap: 10 }),
         R('constraint', 'constraint.condition',
-          String.raw`\b(?:as long as|provided that|on the condition that|without\s+(?:increasing|exceeding|spending|using|requiring|adding|sacrificing|compromising)|while keeping|subject to)\b`,
-          { span: 'tail', cap: 14 }),
+            String.raw`\b(?:as long as|provided that|on the condition that|without\s+(?:increasing|exceeding|spending|using|requiring|adding|sacrificing|compromising)|while keeping|subject to)\b`,
+            { span: 'tail', cap: 14 }),
 
         // ── OBJECTION: barriers (time / money / trust / effort / fit) ──
         R('objection', 'objection.barrier',
-          String.raw`\b(?:(?:can't|cannot|couldn't|can\s+not)\s+(?:really\s+)?afford|(?:don't|do\s+not|doesn't|didn't|haven't)\s+(?:really\s+)?(?:have|got)\s+(?:the\s+|any\s+|enough\s+|much\s+)?(?:time|money|budget|energy|space|support|access|funds|cash|patience)|(?:no|not\s+enough|limited|little|zero)\s+(?:time|money|budget|energy|space|support|funds|cash|patience)|too\s+(?:expensive|busy|old|late|much|hard|difficult|complicated|risky|tired|broke|young|slow|far|overwhelming)|(?:won't|wouldn't|doesn't|not\s+going\s+to)\s+(?:work|fit|apply)\s+(?:for\s+me|in\s+my)|too\s+late\s+for\s+me|only\s+if|without\s+having\s+to|not\s+willing\s+to|(?:don't|do\s+not)\s+know\s+where\s+to\s+start|where\s+do\s+i\s+(?:even\s+)?start)`,
-          { cap: 10 }),
+            String.raw`\b(?:(?:can't|cannot|couldn't|can\s+not)\s+(?:really\s+)?afford|(?:don't|do\s+not|doesn't|didn't|haven't)\s+(?:really\s+)?(?:have|got)\s+(?:the\s+|any\s+|enough\s+|much\s+)?(?:time|money|budget|energy|space|support|access|funds|cash|patience)|(?:no|not\s+enough|limited|little|zero)\s+(?:time|money|budget|energy|space|support|funds|cash|patience)|too\s+(?:expensive|busy|old|late|much|hard|difficult|complicated|risky|tired|broke|young|slow|far|overwhelming)|(?:won't|wouldn't|doesn't|not\s+going\s+to)\s+(?:work|fit|apply)\s+(?:for\s+me|in\s+my)|too\s+late\s+for\s+me|only\s+if|without\s+having\s+to|not\s+willing\s+to|(?:don't|do\s+not)\s+know\s+where\s+to\s+start|where\s+do\s+i\s+(?:even\s+)?start)`,
+            { cap: 10 }),
         R('objection', 'objection.skeptic',
-          String.raw`\b(?:too\s+good\s+to\s+be\s+true|scam|scammy|snake\s+oil|gimmick|gimmicky|pyramid\s+scheme|skeptical|sceptical|(?:don't|do\s+not)\s+(?:really\s+)?(?:trust|believe)|what's\s+the\s+catch|(?:is|does|do|are)\s+(?:it|this|that|they)\s+(?:actually|really|even)\s+(?:work|worth|legit|real))\b`,
-          { gate: 'none', cap: 10 })
+            String.raw`\b(?:too\s+good\s+to\s+be\s+true|scam|scammy|snake\s+oil|gimmick|gimmicky|pyramid\s+scheme|skeptical|sceptical|(?:don't|do\s+not)\s+(?:really\s+)?(?:trust|believe)|what's\s+the\s+catch|(?:is|does|do|are)\s+(?:it|this|that|they)\s+(?:actually|really|even)\s+(?:work|worth|legit|real))\b`,
+            { gate: 'none', cap: 10 })
     ];
 
     // ── Sentence splitting ──
@@ -401,9 +461,9 @@
 
     const MIN_LEN = 20;
     const SKIP_SEL = 'script,style,noscript,textarea,input,select,svg,canvas,pre,code,nav,footer,button,' +
-          '[contenteditable="true"],[role="navigation"],[hidden],#jh-root';
+                     '[contenteditable="true"],[role="navigation"],[hidden],#jh-root';
     const BLOCK_SEL = 'address,article,aside,blockquote,details,dialog,div,dl,fieldset,figure,footer,form,' +
-          'h1,h2,h3,h4,h5,h6,header,hr,li,main,nav,ol,p,pre,section,table,tr,td,th,ul,video,iframe';
+                      'h1,h2,h3,h4,h5,h6,header,hr,li,main,nav,ol,p,pre,section,table,tr,td,th,ul,video,iframe';
 
     // A "text block" = outermost element that holds inline content only.
     // (Tweet text, <p>, <li>, comment bodies...) — works without site-specific selectors.
@@ -508,9 +568,9 @@
 
     function injectPageStyle() {
         const css = SLOTS.map(s =>
-                              `::highlight(jh-${s.id}){background-color:${rgba(s.color, 0.28)};` +
-                              `text-decoration:underline;text-decoration-color:${s.color};` +
-                              `text-decoration-thickness:2px;text-underline-offset:2px;}`
+            `::highlight(jh-${s.id}){background-color:${rgba(s.color, 0.28)};` +
+            `text-decoration:underline;text-decoration-color:${s.color};` +
+            `text-decoration-thickness:2px;text-underline-offset:2px;}`
         ).join('\n') + '\n::highlight(jh-flash){background-color:rgba(255,235,59,.6);}';
         const st = document.createElement('style');
         st.id = 'jh-style';
@@ -761,7 +821,7 @@
             const n = document.createElement('div');
             n.textContent = 'Journey highlighter: this browser lacks the CSS Custom Highlight API.';
             n.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:2147483647;background:#b71c1c;color:#fff;' +
-                'font:12px system-ui;padding:8px 10px;border-radius:8px';
+                              'font:12px system-ui;padding:8px 10px;border-radius:8px';
             document.body.appendChild(n);
             setTimeout(() => n.remove(), 5000);
             return;
