@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Journey Slot Highlighter
 // @namespace    https://github.com/you
-// @version      5.0.0
-// @description  Highlights WHERE / DOING / WANT / WHY / TRIED / STAKES / OBJECTION using linguistic frames (no topic keywords)
+// @version      5.1.0
+// @description  Reads a page as a person's journey: where they are and what they're doing, what they want and why, what they've tried, what's at stake, and the constraints and objections in the way. Spots these by sentence structure, not topic keywords.
 // @match        *://*/*
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -50,10 +51,10 @@
 
     // Subject + adverb scaffolding shared by many rules
     const S = String.raw`\b(?:i|we)(?:'m|'re|'ve|'d|'ll)?(?:\s+(?:am|are|have|had|been|was|were|do|did|would))*\s+`;
-    const ADV = String.raw`(?:(?:really|just|still|only|also|definitely|kinda|honestly|desperately|truly|so|badly|always|never|already|currently|actually|literally|even|now|recently|don't|do\s+not|no\s+longer|not|ever|finally|simply|totally|completely|both|all|kind\s+of|sort\s+of)\s+)*`;
+    const ADV = String.raw`(?:(?:really|just|still|only|also|definitely|kinda|honestly|desperately|truly|so|badly|always|never|already|currently|actually|literally|even|now|recently|don't|do\s+not|no\s+longer|not|ever|finally|simply|totally|completely|both|all|kind\s+of|sort\s+of|very|super|pretty|quite|rather|extremely|incredibly|fairly|awfully|hella|damn|well|too|[a-z]+ly)\s+)*`;
 
     // Clause boundaries (a comma inside 10,000 or a colon inside 10:30 is not one)
-    const BREAK = /,(?!\d)|[;:](?!\d)|[–—(]|\s-\s|\s(?:but|because|since|which|although|though|while|however|whereas|unless|cause|cuz)\b|\s(?:and|so|then)\s+(?:i|we|my|it|that|this|now)\b/gi;
+    const BREAK = /,(?!\d)|[;:](?!\d)|[–—(]|\s-\s|\s(?:but|because|since|which|although|though|while|however|whereas|unless|cause|cuz)\b|\s(?:and|so|then|as)\s+(?:i|we|my|it|that|this|now)\b/gi;
 
     function capWords(text, start, end, cap) {
         const re = /\S+/g;
@@ -119,7 +120,8 @@
     ).split(' '));
     const PROG_EXCL = new Set((
         'trying looking hoping wondering thinking wanting planning going struggling dealing feeling getting ' +
-        'having being worrying failing wishing needing hating dreading considering during according including'
+        'having being worrying failing wishing needing hating dreading considering during according including ' +
+        'facing experiencing suffering battling wrestling coping fighting'
     ).split(' '));
 
     // ── Custom finders (identity frames) ──
@@ -211,6 +213,61 @@
         return out;
     }
 
+
+    // ── Bare present-tense action: "I build custom integrations for agencies", "I mainly send cold emails" ──
+    // Skeleton: I/we + (adverbs)* + VERB. The verb is open-class, so we EXCLUDE closed classes instead of listing verbs.
+    const NOT_ACTION = new Set((
+        // function words / negation / frequency adverbs that change polarity
+        'the a an to of in on at for with and but or so if that this it my your his her its our their he she they you i we me us ' +
+        'them there here not no never always don\'t doesn\'t didn\'t can\'t won\'t wouldn\'t couldn\'t shouldn\'t ' +
+        // auxiliaries & modals
+        'am is are was were be been being have has had do does did can could will would shall should may might must cannot ' +
+        // stative / cognition / source / speech verbs (not "an action they take")
+        'think know believe feel wonder agree disagree guess suppose mean doubt trust remember forget understand realize realise ' +
+        'notice figure see hear look seem appear belong own like love hate prefer say tell ask mention suggest recommend promise ' +
+        'swear bet read heard saw found watched learned discovered ' +
+        // emotive / evaluative / speech-act verbs
+        'appreciate thank apologize apologise regret admit confess enjoy miss fear worry envy respect value dislike adore ' +
+        // control verbs: they have their own slot rules (WANT / TRIED / goal)
+        'try attempt begin start keep stop quit plan intend decide hope want need wish dream'
+    ).split(' '));
+    // Irregular PAST forms (closed set). Ambiguous ones (set, put, cut, hit, read, quit, let, shut, hurt, cost, bet, spread) are left out.
+    const IRREG_PAST = new Set((
+        'went came made took gave got sent wrote bought spent ran sold built lost found told left kept paid met drew drove ate fell ' +
+        'flew forgot began sang swam threw wore won saw said brought taught caught fought chose grew led withdrew shot knew thought ' +
+        'felt heard held sat stood slept spoke stole shook slid spun stuck stung struck swore swept swung tore understood woke wove ' +
+        'bent bled blew broke bred dealt dug fed fled forgave froze hid hung lay lent lit meant overtook rode rang rose sought shone ' +
+        'shrank sank spat sprang strove swelled wept wound wrung'
+    ).split(' '));
+    const NOT_ED = new Set('need feed speed seed bleed breed proceed succeed exceed indeed bed red shed sled'.split(' '));
+    function isPastForm(v) {
+        if (/ed$/.test(v) && !NOT_ED.has(v)) return true;
+        const stripped = v.replace(/^(?:re|over|under|out|mis|un|up|down|with|fore)/, '');
+        return IRREG_PAST.has(v) || IRREG_PAST.has(stripped);
+    }
+
+
+    // Sentence opens with a PAST-tense verb and no subject ("Started my agency", "Lost 20 lbs in 3 months").
+    // Imperatives use the base form, so a past form at the start means a dropped "I" (diary / bio / title style).
+    function droppedSubjectPast(sentence) {
+        const m = sentence.match(/^[^A-Za-z]*([A-Za-z]+)\b(?!')/);
+        if (!m) return false;
+        const v = m[1].toLowerCase();
+        return v.length >= 3 && !NOT_ACTION.has(v) && isPastForm(v);
+    }
+
+    function findPresentAction(w) {
+        const out = [];
+        const re = /\b(?:i|we)\s+((?:(?:[a-z]+ly|just|still|also|really|often|even|now|already|both|all|actually|currently)\s+)*)([a-z]+)\b(?!')/gi;
+        let m;
+        while ((m = re.exec(w))) {
+            const v = m[2].toLowerCase();
+            if (v.length < 3 || NOT_ACTION.has(v) || /ing$/.test(v) || isPastForm(v)) continue;
+            out.push({ start: m.index, end: extend(w, m.index, m.index + m[0].length, 'clause', 12) });
+        }
+        return out;
+    }
+
     // ── Rule construction ──
     function R(slot, id, src, o = {}) {
         return {
@@ -246,12 +303,14 @@
     const PP_IRREG = 'written|built|made|done|begun|run|sold|won|found|taken|given|become|grown|kept|left|paid|put|set|spent|' +
         'brought|bought|taught|chosen|drawn|driven|eaten|fallen|flown|forgotten|gone|hidden|held|led|met|quit|ridden|risen|' +
         'sent|shown|sung|slept|spoken|stood|stolen|swum|thrown|worn|told|lost|saved|cut|read|hit|beaten|broken|caught|fought';
+    // People often use the PAST form where the participle belongs ("I've ran", "I've wrote", "I've went")
+    const PP_INFORMAL = 'ran|wrote|went|did|took|gave|began|drove|ate|fell|flew|chose|grew|rose|spoke|stole|wore|threw|broke';
     // -ed words that are states/feelings/other slots, not accomplishments
     const PP_ED_EXCL = 'tried|attempted|failed|wanted|needed|wished|hoped|liked|loved|hated|used|worried|noticed|realized|realised|' +
         'seemed|looked|appeared|supposed|started|joined|enrolled|picked|signed';
     const PERFECT =
         String.raw`\b(?:i|we)(?:'ve|\s+have)\s+(?:(?:just|recently|finally|already|actually|also|successfully|slowly|barely|almost|only)\s+)*` +
-        `(?:(?!(?:${PP_ED_EXCL})\\b)[a-z]{2,}ed|${PP_IRREG})\\b`;
+        `(?:(?!(?:${PP_ED_EXCL})\\b)[a-z]{2,}ed|${PP_IRREG}|${PP_INFORMAL})\\b`;
 
     const RULES = [
         // ── WHERE: identity & situation (tight frames, never whole sentences) ──
@@ -293,6 +352,7 @@
             String.raw`\b(?:i|we)(?:'ve|\s+have)?\s+(?:(?:just|recently|finally|only|also|actually)\s+)*(?:started|begun|began|picked\s+up|got\s+into|got\s+started|joined|signed\s+up(?:\s+for)?|enrolled)\b`,
             { cap: 10 }),
         R('doing', 'doing.perfect', PERFECT, { cap: 14 }),
+        F('doing', 'doing.present_action', findPresentAction),
 
         // ── WANT: one slot, graded by specificity (explore < desire < goal < specific) ──
         R('want', 'want.desire', WANT_DESIRE, {
@@ -314,6 +374,28 @@
         R('why', 'why.connective',
             String.raw`\b(?:because(?:\s+of)?|since|so\s+that|so\s+(?:i|we)\s+(?:can|could|won't|don't|will|would)|in\s+order\s+to|which\s+is\s+why|that(?:'s|\s+is)\s+why|the\s+reason\s+(?:is|i|why)|due\s+to|ever\s+since|after\s+(?:i|we|my|our|a|an|the|having|being)|my\s+(?:doctor|dr|wife|husband|boss|partner|therapist|trainer|coach|mom|dad|mother|father|kid|kids|son|daughter|girlfriend|boyfriend|friend|manager)\s+(?:said|told|says|asked|thinks|suggested|recommended))\b`,
             { span: 'tail', cap: 18 }),
+        // "as I ran Meta ads" = because/since. A causal "as" is followed directly by a subject; comparative, temporal and discourse uses are vetoed.
+        R('why', 'why.as_because', String.raw`\bas\s+(?:i|we)(?:'ve|'m|'d|'ll)?\b`, {
+            span: 'clause', cap: 14,
+            veto: m => {
+                const before = m.input.slice(0, m.index);
+                const after = m.input.slice(m.index + m[0].length);
+                if (/\b(?:just|such|same|so|twice|half|not|quite|exactly)\s+$/i.test(before)) return true;      // "just as I thought", "such as I"
+                if (/\bas\s+(?:\w+\s+)?$/i.test(before)) return true;                                            // "as soon as I can", "as well as I do"
+                if (/^\s+(?:was|were)\s+\w+ing\b/i.test(after)) return true;                                      // temporal: "as I was walking"
+                if (/^\s+(?:said|mentioned|noted|stated|explained|wrote|expected|thought|see|saw|know|knew|understand|recall|requested|promised|discussed|told|asked|suggested|hoped|mean|can|could|would|should|must|will|need|want)\b/i.test(after)) return true; // discourse / modal
+                return false;
+            }
+        }),
+        // Progressive pain: "I'm struggling with…", "we're dealing with…", "I'm having trouble…"
+        R('why', 'why.pain_progressive',
+            String.raw`\b(?:i(?:'m|\s+am)|we(?:'re|\s+are)|i(?:'ve|\s+have)\s+been|we(?:'ve|\s+have)\s+been)\s+(?:(?:currently|still|really|constantly|always)\s+)*(?:facing|dealing\s+with|struggling(?:\s+with)?|battling|wrestling\s+with|coping\s+with|suffering\s+from|running\s+into|experiencing|having\s+(?:trouble|issues|problems|a\s+hard\s+time))`,
+            { cap: 12 }),
+        // Owned problem statement: "my main problem is…", "the issue that I'm facing is…"
+        R('why', 'why.problem_statement',
+            String.raw`\b(?:my|our)\s+(?:(?:main|biggest|real|only|current|major|big|first|core)\s+)?(?:issue|problem|challenge|struggle|bottleneck|roadblock|obstacle|pain\s+point|concern|blocker)s?\b` +
+            String.raw`|\bthe\s+(?:(?:main|biggest|real|only|current|major|big|first|core)\s+)?(?:issue|problem|challenge|struggle|bottleneck|roadblock|obstacle|pain\s+point|concern|blocker)s?\s+(?:that\s+)?(?:i|we)(?:'m|'re|\s+am|\s+are|'ve|\s+have)?\b`,
+            { cap: 14 }),
         R('why', 'why.affect',
             String.raw`\b(?:tired|sick|fed\s+up|bored|scared|afraid|worried|embarrassed|ashamed|frustrated|stuck|overwhelmed|burn(?:ed|t)\s+out|exhausted|stressed|anxious|miserable|desperate|terrified|dreading|dread|hate|hating|can't\s+stand|cannot\s+stand)\b(?:\s+(?:of|with|about|by|in|that|to))?`,
             { cap: 10 }),
@@ -331,6 +413,11 @@
         R('tried', 'tried.failure',
             String.raw`\b(?:(?:didn't|did\s+not|never|hasn't|has\s+not|haven't|wasn't|couldn't)\s+(?:(?:really|ever|actually|seem\s+to|even|quite|long\s+term|long-term)\s+)*(?:work|worked|help|helped|stick|last|click|fix|change|hold|translate|get\s+results|see\s+results)|(?:doesn't|does\s+not|don't|do\s+not|isn't|won't)\s+(?:(?:really|ever|actually|seem\s+to|even|quite)\s+)*(?:work|help|stick|last)|no\s+(?:luck|results?|progress|change|improvement|difference)|(?:nothing|none\s+of\s+(?:it|them|that|these|those))\s+(?:has\s+|have\s+|ever\s+|really\s+)*(?:work(?:s|ed)?|help(?:s|ed)?|stick(?:s)?|stuck)|gave\s+up|give\s+up\s+on|fell\s+off(?:\s+the\s+wagon)?|fell\s+back|relapsed|wasted|failed(?:\s+to|\s+at|\s+every)?|back\s+to\s+square\s+one|can(?:'t|not)\s+(?:seem\s+to\s+)?stick|couldn't\s+stick|keep(?:s)?\s+(?:failing|quitting|falling|relapsing|giving|forgetting|starting|restarting))`,
             { cap: 10, veto: m => /\bif\s+(?:i|we)\s+(?:\w+\s+){0,2}$/i.test(m.input.slice(0, m.index)) }),
+
+        // Outcome of an attempt: "they botched", "my launch flopped", "didn't convert". Past forms only (avoids nouns like "tank").
+        R('tried', 'tried.failed_outcome',
+            String.raw`\b(?:(?:they|it|that|those|these|all\s+of\s+them|everything)\s+)?(?:botched|flopped|bombed|tanked|crashed|fizzled|backfired|imploded|stalled|underperformed|flatlined|sputtered|floundered|misfired|fell\s+flat|went\s+nowhere|got\s+nowhere|went\s+south|(?:didn't|did\s+not)\s+(?:convert|land|take\s+off|perform)|never\s+(?:converted|took\s+off|performed))\b`,
+            { cap: 8 }),
 
         // ── STAKES: conditionals, fears, future-self ──
         R('stakes', 'stakes.conditional',
@@ -410,7 +497,8 @@
             const s = text.slice(ss, se);
             if (s.trim().length < 4) continue;
 
-            const mode = FP_RE.test(s) ? 'fp' : (FRAG_RE.test(s) ? 'frag' : 'none');
+            let mode = FP_RE.test(s) ? 'fp' : (FRAG_RE.test(s) ? 'frag' : 'none');
+            if (mode !== 'frag' && droppedSubjectPast(s)) mode = 'frag'; // "Started my agency" (has "my", but no subject)
             const work = mode === 'frag' ? 'I ' + s : s; // virtual subject for dropped-subject fragments
             const shift = mode === 'frag' ? 2 : 0;
 
@@ -548,7 +636,19 @@
 
     const registry = new Map(); // block -> { key, records:[{slot,level,text,range}], slots, text }
     let enabled = loadEnabled();
-    let host = null, shadow = null, panelOpen = false;
+    const HISTORY_KEY = 'jh:history';
+    let historyEntries = [];
+    let historyIndex = new Map();
+    const historyEnabled = new Set(SLOTS.map(s => s.id));
+    let host = null, shadow = null, panelOpen = false, currentTab = 'current', historyQuery = '';
+    const historyReady = loadHistory().then(entries => {
+        historyEntries = entries;
+        historyIndex = new Map(entries.map(item => [item.key, item]));
+        renderUI();
+    }).catch(error => {
+        console.warn('[journey] history initialization failed', error);
+        renderUI();
+    });
 
     function loadEnabled() {
         try {
@@ -560,21 +660,228 @@
     function saveEnabled() {
         try { localStorage.setItem('jh:enabled', JSON.stringify([...enabled])); } catch (e) { /* ignore */ }
     }
+    function isWebUrl(value) {
+        try {
+            const protocol = new URL(value).protocol;
+            return protocol === 'http:' || protocol === 'https:';
+        } catch (e) { return false; }
+    }
+    function historyKey(slot, text) {
+        return `${slot}|${text.replace(/\s+/g, ' ').trim().toLocaleLowerCase()}`;
+    }
+    async function readStoredHistory() {
+        if (typeof GM_getValue === 'function') {
+            const shared = await GM_getValue(HISTORY_KEY, []);
+            try {
+                const local = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+                return Array.isArray(local) ? [...(Array.isArray(shared) ? shared : []), ...local] : shared;
+            } catch (e) {
+                return shared;
+            }
+        }
+        try {
+            return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+        } catch (e) {
+            console.warn('[journey] could not read history', e);
+            return [];
+        }
+    }
+
+    async function loadHistory() {
+        let value;
+        try {
+            value = await readStoredHistory();
+        } catch (e) {
+            console.warn('[journey] could not read userscript history storage', e);
+            try { value = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+            catch (fallbackError) {
+                console.warn('[journey] could not read local history storage', fallbackError);
+                return [];
+            }
+        }
+        if (!Array.isArray(value)) return [];
+        const loaded = new Map();
+        for (const entry of value) {
+            if (!entry || typeof entry.text !== 'string') continue;
+            const sources = Array.isArray(entry.sources) ? entry.sources : (
+                typeof entry.url === 'string' ? [{
+                    url: entry.url,
+                    title: entry.title || '',
+                    context: entry.text,
+                    firstSeen: entry.firstSeen || Date.now()
+                }] : []
+            );
+            const slots = typeof entry.slot === 'string' ? [entry.slot] :
+                (Array.isArray(entry.slots) ? entry.slots : []);
+            for (const slot of slots) {
+                if (!SLOT_MAP[slot]) continue;
+                const key = historyKey(slot, entry.text);
+                let item = loaded.get(key);
+                if (!item) {
+                    item = { key, slot, level: entry.level || '', text: entry.text, sources: [] };
+                    loaded.set(key, item);
+                }
+                for (const source of sources) {
+                    if (!source || typeof source.url !== 'string' || !isWebUrl(source.url)) continue;
+                    const existing = item.sources.find(saved => saved.url === source.url);
+                    if (!existing) {
+                        const saved = {
+                            url: source.url,
+                            title: typeof source.title === 'string' ? source.title : '',
+                            firstSeen: source.firstSeen || entry.firstSeen || Date.now()
+                        };
+                        if (typeof source.context === 'string') saved.context = source.context;
+                        item.sources.push(saved);
+                    }
+                }
+            }
+        }
+        return [...loaded.values()].filter(item => item.sources.length);
+    }
+
+    async function saveHistory() {
+        if (typeof GM_setValue === 'function') {
+            await GM_setValue(HISTORY_KEY, historyEntries);
+            return;
+        }
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(historyEntries));
+    }
+
+    async function rememberHistory() {
+        let changed = false;
+        const url = location.href;
+        const title = document.title;
+        const now = Date.now();
+        for (const [blk, ent] of registry) {
+            if (!blk.isConnected || !ent.slots.length) continue;
+            for (const record of ent.records) {
+                const text = record.text.replace(/\s+/g, ' ').trim();
+                if (!text || !SLOT_MAP[record.slot]) continue;
+                const key = historyKey(record.slot, text);
+                let item = historyIndex.get(key);
+                if (!item) {
+                    item = { key, slot: record.slot, level: record.level || '', text, sources: [] };
+                    historyEntries.unshift(item);
+                    historyIndex.set(key, item);
+                    changed = true;
+                }
+                let source = item.sources.find(saved => saved.url === url);
+                if (!source) {
+                    item.sources.push({ url, title, firstSeen: now });
+                    changed = true;
+                } else if (source.title !== title) {
+                    source.title = title;
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            try { await saveHistory(); }
+            catch (e) { console.warn('[journey] could not save history', e); }
+        }
+    }
+
+    function renderHistory() {
+        if (!shadow || currentTab !== 'history') return;
+        const query = historyQuery;
+        const matches = historyEntries.filter(item => {
+            if (!historyEnabled.has(item.slot)) return false;
+            const sources = item.sources.map(source =>
+                `${source.title || ''} ${source.url} ${source.context || ''}`).join(' ');
+            return !query || `${item.text} ${sources}`.toLocaleLowerCase().includes(query);
+        });
+        const list = shadow.querySelector('.list');
+        list.innerHTML = '';
+        if (!matches.length) {
+            list.textContent = '';
+            const empty = document.createElement('div');
+            empty.className = 'empty';
+            empty.textContent = historyEntries.length ? 'No history matches your search and filters.' : 'No highlights saved yet. Highlighted passages will appear here.';
+            list.appendChild(empty);
+            return;
+        }
+        for (const item of matches) {
+            const row = document.createElement('div');
+            row.className = 'row';
+            const dots = document.createElement('div');
+            dots.className = 'dots';
+            const dot = document.createElement('span');
+            dot.className = 'dot';
+            dot.style.background = SLOT_MAP[item.slot].color;
+            dots.appendChild(dot);
+            const entry = document.createElement('div');
+            entry.className = 'entry';
+            const snippet = document.createElement('div');
+            snippet.className = 'snip';
+            snippet.textContent = item.text;
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            meta.textContent = `${SLOT_MAP[item.slot].label} · Found on ${item.sources.length} ${item.sources.length === 1 ? 'page' : 'pages'}`;
+            const sources = document.createElement('div');
+            sources.className = 'sources';
+            for (const source of item.sources) {
+                const link = document.createElement('a');
+                link.className = 'source';
+                link.href = source.url;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                let site = source.url;
+                try { site = new URL(source.url).hostname; } catch (e) { /* preserve the saved URL */ }
+                link.textContent = `${source.title || site} · ${site}`;
+                link.title = source.url;
+                sources.appendChild(link);
+            }
+            entry.append(snippet, meta, sources);
+            row.append(dots, entry);
+            row.addEventListener('click', event => {
+                if (event.target.closest('a')) return;
+                if (item.sources.some(source => source.url === location.href)) {
+                    const target = [...registry.entries()].find(([, ent]) =>
+                        ent.records.some(record => record.slot === item.slot &&
+                            historyKey(record.slot, record.text) === item.key)
+                    );
+                    if (target) { jumpTo(target[0]); return; }
+                }
+                const firstSource = item.sources[0];
+                if (firstSource && isWebUrl(firstSource.url)) window.open(firstSource.url, '_blank', 'noopener');
+            });
+            list.appendChild(row);
+        }
+    }
 
     function rgba(hex, a) {
         const v = hex.replace('#', '');
         return `rgba(${parseInt(v.slice(0, 2), 16)},${parseInt(v.slice(2, 4), 16)},${parseInt(v.slice(4, 6), 16)},${a})`;
     }
 
+    // WANT is drawn in four shades by level: lighter = exploring, darker = committed / specific.
+    // [background alpha, underline thickness px]
+    const WANT_SHADE = {
+        explore:  [0.12, 1],
+        desire:   [0.26, 2],
+        goal:     [0.42, 3],
+        specific: [0.60, 3]
+    };
+    function highlightName(slot, level) {
+        return slot === 'want' ? 'want-' + (WANT_SHADE[level] ? level : 'desire') : slot;
+    }
+
     function injectPageStyle() {
-        const css = SLOTS.map(s =>
-            `::highlight(jh-${s.id}){background-color:${rgba(s.color, 0.28)};` +
-            `text-decoration:underline;text-decoration-color:${s.color};` +
-            `text-decoration-thickness:2px;text-underline-offset:2px;}`
-        ).join('\n') + '\n::highlight(jh-flash){background-color:rgba(255,235,59,.6);}';
+        const rule = (name, color, alpha, px) =>
+            `::highlight(jh-${name}){background-color:${rgba(color, alpha)};text-decoration:underline;` +
+            `text-decoration-color:${color};text-decoration-thickness:${px}px;text-underline-offset:2px;}`;
+        const rules = [];
+        for (const s of SLOTS) {
+            if (s.id === 'want') {
+                for (const [lvl, [a, px]] of Object.entries(WANT_SHADE)) rules.push(rule('want-' + lvl, s.color, a, px));
+            } else {
+                rules.push(rule(s.id, s.color, 0.28, 2));
+            }
+        }
+        rules.push('::highlight(jh-flash){background-color:rgba(255,235,59,.6);}');
         const st = document.createElement('style');
         st.id = 'jh-style';
-        st.textContent = css;
+        st.textContent = rules.join('\n');
         (document.head || document.documentElement).appendChild(st);
     }
 
@@ -597,17 +904,20 @@
     function applyHighlights() {
         const per = {};
         SLOTS.forEach((s, i) => {
-            const h = new Highlight();
-            h.priority = i;
-            per[s.id] = h;
+            const names = s.id === 'want' ? Object.keys(WANT_SHADE).map(l => 'want-' + l) : [s.id];
+            for (const n of names) {
+                const h = new Highlight();
+                h.priority = i * 10 + (LEVEL_RANK[n.replace('want-', '')] || 0); // on overlap, the more committed shade wins
+                per[n] = h;
+            }
         });
         for (const [blk, ent] of registry) {
             if (!blk.isConnected) { registry.delete(blk); continue; }
             for (const r of ent.records) {
-                if (enabled.has(r.slot)) per[r.slot].add(r.range);
+                if (enabled.has(r.slot)) per[highlightName(r.slot, r.level)].add(r.range);
             }
         }
-        for (const s of SLOTS) CSS.highlights.set('jh-' + s.id, per[s.id]);
+        for (const n of Object.keys(per)) CSS.highlights.set('jh-' + n, per[n]);
     }
 
     /* ════════════════════════════════════════════════════════════════
@@ -632,6 +942,8 @@
                 if (i % 25 === 24) await tick(); // keep phones responsive
             }
             applyHighlights();
+            await historyReady;
+            await rememberHistory();
             renderUI();
         } catch (e) {
             console.warn('[journey] scan failed', e);
@@ -662,17 +974,30 @@
    box-shadow:0 6px 24px rgba(0,0,0,.6);font:13px/1.45 system-ui,sans-serif;overflow:hidden}
  .panel.open{display:flex}
  .hdr{padding:10px 12px 6px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#aaa}
+ .tabs{display:flex;gap:6px;padding:2px 10px 8px}
+ .tab{flex:1;padding:7px;border:1px solid #444;border-radius:8px;background:#23233a;color:#aaa;font:600 12px system-ui,sans-serif;cursor:pointer}
+ .tab.active{border-color:#fdd835;color:#fff;background:#30304a}
  .chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 10px 8px}
  .chip{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:14px;border:1px solid #444;
    font-size:12px;color:#ddd;background:#23233a;cursor:pointer;user-select:none}
  .chip.off{opacity:.35}
+ .search{padding:0 10px 8px}
+ .search input{width:100%;padding:8px 10px;border:1px solid #444;border-radius:8px;background:#23233a;color:#eee;font:12px system-ui,sans-serif;outline:none}
+ .search input:focus{border-color:#7cb342}
+ .history-tools{display:flex;justify-content:flex-end;padding:0 10px 8px}
+ .clear-history{padding:6px 9px;border:1px solid #744;background:#3a2329;color:#f2b8b8;border-radius:7px;font:12px system-ui,sans-serif;cursor:pointer}
+ .clear-history:disabled{opacity:.45;cursor:default}
  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
  .list{overflow-y:auto;border-top:1px solid #333;-webkit-overflow-scrolling:touch}
  .row{display:flex;align-items:flex-start;gap:8px;padding:9px 12px;min-height:44px;border-bottom:1px solid #2a2a40;cursor:pointer}
  .row:active{background:#2a2a3e}
  .dots{display:flex;gap:3px;padding-top:5px;flex:none}
  .dots .dot{width:8px;height:8px}
- .snip{flex:1;color:#ccc;font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+ .entry{flex:1;min-width:0}
+ .snip{color:#ccc;font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+ .meta{margin-top:3px;color:#777;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .sources{display:flex;flex-direction:column;gap:3px;margin-top:5px}
+ .source{color:#82b5df;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
  .cov{flex:none;color:#888;font-size:11px;padding-top:2px}
  .empty{padding:14px;color:#888;font-size:12px}
  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(74px + env(safe-area-inset-bottom,0px));max-width:90vw;
@@ -681,7 +1006,14 @@
  .toast b{font-weight:700}
 </style>
 <div class="toast"></div>
-<div class="panel"><div class="hdr"></div><div class="chips"></div><div class="list"></div></div>
+<div class="panel">
+  <div class="hdr"></div>
+  <div class="tabs"><button class="tab active" data-tab="current">Current page</button><button class="tab" data-tab="history">History</button></div>
+  <div class="chips"></div>
+  <div class="search" hidden><input type="search" placeholder="Search past highlights…" aria-label="Search history" autocomplete="off"></div>
+  <div class="history-tools" hidden><button class="clear-history" type="button">Clear history</button></div>
+  <div class="list"></div>
+</div>
 <div class="btn" title="Journey signals">0</div>`;
 
         document.body.appendChild(host);
@@ -693,6 +1025,33 @@
             shadow.querySelector('.panel').classList.toggle('open', panelOpen);
             renderUI();
         });
+        shadow.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                currentTab = tab.dataset.tab;
+                renderUI();
+            });
+        });
+        shadow.querySelector('.search input').addEventListener('input', event => {
+            historyQuery = event.target.value.trim().toLocaleLowerCase();
+            renderHistory();
+        });
+        shadow.querySelector('.clear-history').addEventListener('click', clearHistory);
+    }
+
+    async function clearHistory() {
+        if (!historyEntries.length || !window.confirm('Clear all saved highlighted phrases and their page links? This cannot be undone.')) return;
+        try {
+            await historyReady;
+            if (typeof GM_setValue === 'function') await GM_setValue(HISTORY_KEY, []);
+            else localStorage.removeItem(HISTORY_KEY);
+        } catch (e) {
+            console.warn('[journey] could not clear history', e);
+            window.alert('History could not be cleared because browser storage is unavailable.');
+            return;
+        }
+        historyEntries.length = 0;
+        historyIndex.clear();
+        renderUI();
     }
 
     function docOrder(a, b) {
@@ -714,10 +1073,39 @@
         shadow.querySelector('.btn').textContent = entries.length;
         if (!panelOpen) return;
 
-        shadow.querySelector('.hdr').textContent = `Journey signals · ${entries.length} blocks`;
+        shadow.querySelectorAll('.tab').forEach(tab => {
+            const active = tab.dataset.tab === currentTab;
+            tab.classList.toggle('active', active);
+            tab.setAttribute('aria-selected', String(active));
+        });
+        shadow.querySelector('.search').hidden = currentTab !== 'history';
+        shadow.querySelector('.history-tools').hidden = currentTab !== 'history';
 
         const chips = shadow.querySelector('.chips');
         chips.innerHTML = '';
+        if (currentTab === 'history') {
+            const counts = Object.fromEntries(SLOTS.map(s => [s.id, 0]));
+            for (const item of historyEntries) {
+                if (counts[item.slot] !== undefined) counts[item.slot]++;
+            }
+            shadow.querySelector('.hdr').textContent = `History · ${historyEntries.length} highlights`;
+            shadow.querySelector('.clear-history').disabled = historyEntries.length === 0;
+            for (const s of SLOTS) {
+                const c = document.createElement('button');
+                c.className = 'chip' + (historyEnabled.has(s.id) ? '' : ' off');
+                c.innerHTML = `<span class="dot" style="background:${s.color}"></span>${s.label} ${counts[s.id]}`;
+                c.addEventListener('click', () => {
+                    if (historyEnabled.has(s.id)) historyEnabled.delete(s.id);
+                    else historyEnabled.add(s.id);
+                    renderUI();
+                });
+                chips.appendChild(c);
+            }
+            renderHistory();
+            return;
+        }
+
+        shadow.querySelector('.hdr').textContent = `Journey signals · ${entries.length} blocks`;
         for (const s of SLOTS) {
             const c = document.createElement('div');
             c.className = 'chip' + (enabled.has(s.id) ? '' : ' off');
@@ -736,6 +1124,7 @@
 
         const list = shadow.querySelector('.list');
         list.innerHTML = '';
+        shadow.querySelector('.search').hidden = true;
         if (!entries.length) {
             list.innerHTML = '<div class="empty">No journey signals found on this page yet.</div>';
             return;
