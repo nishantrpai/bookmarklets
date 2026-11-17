@@ -175,8 +175,8 @@
       </div>
     `;
 
-      const style = document.createElement("style");
-      style.textContent = `
+        const style = document.createElement("style");
+        style.textContent = `
       #angle-surfer-panel {
         position: fixed;
         top: 0;
@@ -314,57 +314,57 @@
       .as-status { color: #999; font-size: 10px; margin-top: 6px; }
       .as-count { color: #999; font-size: 9px; margin-top: 10px; }
     `;
-      document.head.appendChild(style);
-      document.body.appendChild(panel);
+        document.head.appendChild(style);
+        document.body.appendChild(panel);
 
-      document.getElementById("as-close").addEventListener("click", () =>
-                                                           panel.classList.remove("open")
-                                                          );
-      document.getElementById("as-surf").addEventListener("click", surf);
-      document.getElementById("as-copy").addEventListener("click", copyTree);
+        document.getElementById("as-close").addEventListener("click", () =>
+                                                             panel.classList.remove("open")
+                                                            );
+        document.getElementById("as-surf").addEventListener("click", surf);
+        document.getElementById("as-copy").addEventListener("click", copyTree);
 
-      // Select mode toggle
-      document.getElementById("as-select").addEventListener("click", () => {
-          selectMode = !selectMode;
-          const btn = document.getElementById("as-select");
-          btn.classList.toggle("active", selectMode);
-          btn.textContent = selectMode ? "deselect" : "select";
+        // Select mode toggle
+        document.getElementById("as-select").addEventListener("click", () => {
+            selectMode = !selectMode;
+            const btn = document.getElementById("as-select");
+            btn.classList.toggle("active", selectMode);
+            btn.textContent = selectMode ? "deselect" : "select";
 
-          if (!selectMode) {
-              selectedNodes.clear();
-              document.querySelectorAll(".as-node.selected").forEach((el) =>
-                                                                     el.classList.remove("selected")
-                                                                    );
-          }
-      });
+            if (!selectMode) {
+                selectedNodes.clear();
+                document.querySelectorAll(".as-node.selected").forEach((el) =>
+                                                                       el.classList.remove("selected")
+                                                                      );
+            }
+        });
 
-      // Resize handle
-      const handle = document.getElementById("as-resize");
-      let resizing = false;
+        // Resize handle
+        const handle = document.getElementById("as-resize");
+        let resizing = false;
 
-      handle.addEventListener("mousedown", (e) => {
-          resizing = true;
-          e.preventDefault();
-          document.body.style.cursor = "col-resize";
-          document.body.style.userSelect = "none";
-      });
+        handle.addEventListener("mousedown", (e) => {
+            resizing = true;
+            e.preventDefault();
+            document.body.style.cursor = "col-resize";
+            document.body.style.userSelect = "none";
+        });
 
-      document.addEventListener("mousemove", (e) => {
-          if (!resizing) return;
-          const newWidth = window.innerWidth - e.clientX;
-          if (newWidth >= 200 && newWidth <= window.innerWidth * 0.8) {
-              panel.style.width = newWidth + "px";
-          }
-      });
+        document.addEventListener("mousemove", (e) => {
+            if (!resizing) return;
+            const newWidth = window.innerWidth - e.clientX;
+            if (newWidth >= 200 && newWidth <= window.innerWidth * 0.8) {
+                panel.style.width = newWidth + "px";
+            }
+        });
 
-      document.addEventListener("mouseup", () => {
-          if (resizing) {
-              resizing = false;
-              document.body.style.cursor = "";
-              document.body.style.userSelect = "";
-          }
-      });
-  }
+        document.addEventListener("mouseup", () => {
+            if (resizing) {
+                resizing = false;
+                document.body.style.cursor = "";
+                document.body.style.userSelect = "";
+            }
+        });
+    }
 
     // ─── Search-bar button ──────────────────────────────────────────────────────
     function injectSearchButton() {
@@ -398,27 +398,27 @@
       flex-shrink: 0;
     `;
 
-      btn.addEventListener("mouseenter", () => {
-          btn.style.color = "#000";
-          btn.style.borderColor = "#000";
-      });
-      btn.addEventListener("mouseleave", () => {
-          btn.style.color = "#333";
-          btn.style.borderColor = "#ddd";
-      });
-      btn.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          document.getElementById("angle-surfer-panel").classList.toggle("open");
-      });
+        btn.addEventListener("mouseenter", () => {
+            btn.style.color = "#000";
+            btn.style.borderColor = "#000";
+        });
+        btn.addEventListener("mouseleave", () => {
+            btn.style.color = "#333";
+            btn.style.borderColor = "#ddd";
+        });
+        btn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById("angle-surfer-panel").classList.toggle("open");
+        });
 
-      const submit = parent.querySelector('button[type="submit"], input[type="submit"]');
-      if (submit) {
-          submit.insertAdjacentElement("beforebegin", btn);
-      } else {
-          input.insertAdjacentElement("afterend", btn);
-      }
-  }
+        const submit = parent.querySelector('button[type="submit"], input[type="submit"]');
+        if (submit) {
+            submit.insertAdjacentElement("beforebegin", btn);
+        } else {
+            input.insertAdjacentElement("afterend", btn);
+        }
+    }
 
     // ─── Surf ───────────────────────────────────────────────────────────────────
     async function surf() {
@@ -461,10 +461,26 @@
     }
 
     // ─── Copy ───────────────────────────────────────────────────────────────────
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        // Fallback for non-secure contexts (LAN IP)
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        return Promise.resolve();
+    }
+
     function copyTree() {
         if (selectedNodes.size > 0) {
             const text = [...selectedNodes].join("\n");
-            navigator.clipboard.writeText(text).then(flashCopy);
+            copyToClipboard(text).then(flashCopy);
             return;
         }
 
@@ -482,7 +498,7 @@
         }
         walk(currentSeed, 1, new Set());
 
-        navigator.clipboard.writeText(lines.join("\n")).then(flashCopy);
+        copyToClipboard(lines.join("\n")).then(flashCopy);
     }
 
     function flashCopy() {
